@@ -1,0 +1,349 @@
+---
+title: "Assignment 1"
+author: "Cristina Davila Gonzalez"
+date: "9/13/2020"
+output: html_document
+---
+# VIS Assignment 1
+
+For the purposes of focusing this exercise in **experimenting more with ggplot**, I'll be using Taelor Malcolm's variables in her **Week 2** assignment. In my particular case, I'll be applying them in **Honolulu County, Hawaii**. First, I'm loading all the libraries I'll be needing in this case:
+
+```{r load libraries, message = FALSE}
+library(tidycensus)
+library(tidyverse)
+library (ggplot2)
+```
+
+```{r}
+vars <- c("B06009_004",
+          "B25001_001",
+          "B25003_003",
+          "B06007_002",
+          "B01002_001",
+          "B01003_001",
+          "B03002_003",
+          "B03002_004",
+          "B03002_006",
+          "B03002_012",
+          "B01001_026",
+          "B06010_003",
+          "B06010_004",
+          "B06010_005",
+          "B06010_006",
+          "B06010_007",
+          "B06010_008",
+          "B06010_009",
+          "B06010_010",
+          "B06010_011")
+```
+
+## Loading 2014-2018 5 year ACS data for Honolulu County, HI
+
+```{r,  message=FALSE, results='hide'}
+Honolulu_tracts <- get_acs(geography = "tract", 
+                       variables = vars,
+                       state = "HI", 
+                       county = "Honolulu",
+                       surver= "acs5",
+                       output = "wide") %>% 
+  
+             rename(tot_bach = "B06009_004E",
+                    tot_hh = "B25001_001E",
+                    tot_rent_occ = "B25003_003E",
+                    tot_eng = "B06007_002E",
+                    med_age = "B01002_001E",
+                    tot_pop = "B01003_001E",
+                    pop_inc = "B06010_003E",
+                    bel_10 = "B06010_004E", 
+                    bel_15 = "B06010_005E",
+                    bel_25 = "B06010_006E",
+                    bel_35 = "B06010_007E",
+                    bel_50 = "B06010_008E",
+                    bel_65 = "B06010_009E",
+                    bel_75 = "B06010_010E",
+                    abo_75 = "B06010_011E",
+                    nh_white_pop = "B03002_003E",
+                    nh_black_pop = "B03002_004E",
+                    nh_asian_pop = "B03002_006E",
+                    hispanic_pop = "B03002_012E") %>%
+              mutate(pct_rent_occ = tot_rent_occ / tot_hh,
+                     pct_bach = tot_bach / tot_pop,
+                     pct_eng = tot_eng / tot_pop,
+                     majority_inc = case_when(
+                     (bel_10 + bel_15 + bel_25) / pop_inc > 0.5 ~ "bel_25",
+                     (bel_35 + bel_50 + bel_65 + abo_75) / pop_inc > 0.5 ~ "abo_25",
+                     (bel_10 + bel_15 + bel_25 + bel_35 + bel_50 + bel_65 +
+                      bel_75 + abo_75)/pop_inc < 0.5 ~ "other", 
+                     TRUE ~ "None"),
+                     majority_race_eth = case_when(
+                     nh_white_pop / tot_pop > 0.5 ~ "nh_white",
+                     nh_black_pop / tot_pop > 0.5 ~ "nh_black",
+                     nh_asian_pop / tot_pop > 0.5 ~ "nh_asian",
+                    hispanic_pop / tot_pop > 0.5 ~ "hispanic",
+                    (nh_white_pop + nh_black_pop + nh_asian_pop + hispanic_pop) /
+                     tot_pop < 0.5 ~ "other",
+                     TRUE ~ "None")) %>%
+              filter(tot_pop > 0, tot_hh > 0) %>%
+              select(GEOID, pct_rent_occ, pct_bach, pct_eng,
+                     majority_inc, med_age, majority_race_eth, tot_pop)
+```
+
+I decided to incorporate the Wes Anderson color palette, which I got from a shared link shared in a R Zoom study session with fellow incoming MUPs.
+
+```{r}
+library(wesanderson)
+
+```
+
+
+## Plot 1: Pie chart
+
+## Majority race/ethnicity
+
+```{r, message=FALSE, results='hide'}
+pie_chart <- ggplot(Honolulu_tracts, aes(x = 1, fill = majority_race_eth)) +
+  geom_bar(position = "fill") +
+  coord_polar(theta = "y") +
+  scale_y_continuous(name = "Number of tracts") +
+  scale_fill_manual (name = "Majority race/ethnicity",
+                     values = wes_palette("Rushmore1", n = 4),
+                       labels = c("Hispanic",
+                                  "Non-Hispanic\nAsian",
+                                  "Non-Hispanic\nwhite",
+                                  "No majority")) +
+  theme_void() 
+
+pie_chart
+```
+
+## Plot 2: Area chart
+
+## Median age within tract
+
+```{r, message=FALSE, results='hide'}
+
+ggplot(Honolulu_tracts, aes(x=med_age)) +
+  geom_density(fill="#CAAC3A", color="#e9ecef", alpha=0.8) +
+  scale_x_continuous(name = "Median age within tract",
+                     breaks = seq(10, 80, by = 10)) +
+  
+  theme_minimal()
+
+```
+
+## Plot 3: Scatterplot with overlapping points chart
+
+## Median age within tract and race/ethnicity
+
+```{r, message=FALSE, results='hide'}
+
+ggplot(Honolulu_tracts, 
+       aes(x = med_age,
+           y = majority_race_eth,
+           color= majority_race_eth, )) +
+  geom_point(position = "jitter",
+             size = 1,
+             alpha = 3) +
+  stat_smooth(color = "#69b3a2", linetype = 1, size = 1) +
+  scale_x_continuous(name = "Median age within tract") +
+  scale_y_discrete(name = element_blank(),
+                       labels = c("Hispanic",
+                                  "Non-Hispanic\nAsian",
+                                  "Non-Hispanic\nwhite",
+                                  "No majority")) +
+   scale_color_manual (name = "Majority race/ethnicity",
+                     values = wes_palette("GrandBudapest1", n = 4),
+                       labels = c("Hispanic",
+                                  "Non-Hispanic\nAsian",
+                                  "Non-Hispanic\nwhite",
+                                  "No majority")) +
+  
+  theme_minimal()+ 
+  theme(legend.position ="none")
+```
+
+I got the #69b3a2 color for the lines between dots from Taelor's file. 
+
+## Plot 4: Violin and scatter chart
+
+## Percent of individuals that only speak English, and majority race/ethnicity
+
+```{r, message=FALSE, results='hide'}
+
+ggplot(Honolulu_tracts, aes(x = majority_race_eth, y = pct_eng, color = majority_race_eth)) +
+  geom_violin() +
+  geom_point(position = "jitter",
+             alpha = 0.5,
+             size = 0.5) +
+  scale_x_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic white",
+                                  "No majority")) +
+  scale_y_continuous(name = "Percent of individuals that only speak English",
+                     breaks = seq(0, 1, by = 0.1),
+                     labels = paste(seq(0, 100, by = 10), "%", sep = "")) +
+  scale_color_manual(name = "Majority race/ethnicity",
+                     values = wes_palette("GrandBudapest2", n = 4),
+                       labels = c("Hispanic",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Black", 
+                                  "No Majority")) +
+  theme_minimal() +
+  theme(legend.position = "none")
+  
+```
+
+## Plot 5: Bar chart
+
+## Race/ethnicity and income
+
+```{r, message=FALSE, results='hide'}
+ggplot(Honolulu_tracts, aes(x = majority_race_eth,fill = majority_inc)) +
+  geom_bar() +
+  scale_y_continuous(name = "Number of tracts") +
+  scale_x_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic\nAsian",
+                                  "Non-Hispanic\nwhite",
+                                  "No majority")) +
+  scale_fill_manual(values = wes_palette("Cavalcanti1", n = 3),
+                    name = element_blank(),
+                        labels = c("Income Below $25,000", "Income Above $25,000")) +
+
+  theme_minimal() +
+  theme(legend.key.size = unit(0.1, "cm"))
+```
+
+## Plot 6: Counts chart
+
+## Percent of renter occupied units, race/ethnicity and majority income
+
+```{r, message=FALSE, results='hide'}
+
+ggplot (Honolulu_tracts) +
+  geom_point(mapping = aes(x = majority_race_eth, y = pct_rent_occ, size= majority_inc, color= majority_inc))+
+  
+ scale_size_discrete(name = "Majority income",
+                     labels = c("NA", "Income Below $25,000", "Income Above $25,000")) +
+ scale_y_continuous(name = "Percent of renter occupied units",
+                     breaks = seq(0, 1, by = 0.25),
+                     labels = paste(seq(0, 100, by = 25), "%", sep = "")) +
+ scale_x_discrete(name = "Majority race/ethnicity",
+                       labels = c("Hispanic",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Black", 
+                                  "No Majority")) +
+  scale_color_manual(name = "Majority income",
+                     values = wes_palette("FantasticFox1", n = 3),
+                     labels = c("NA", "Income Below $25,000", "Income Above $25,000")) +
+  theme_minimal() +
+  theme(legend.key.size = unit(0.1, "cm"))
+
+```
+## Plot 7: 2D Density chart
+
+## Percent of renter occupied units, Median age within tract and race/ethnicity
+
+developed with the additional support from Julia Meinhardt, MUP'22.
+
+```{r, message=FALSE, results='hide'}
+
+ggplot(Honolulu_tracts) +
+    geom_density2d(mapping= aes(y = pct_rent_occ,
+           x = med_age,
+           color = majority_race_eth)) +
+  scale_y_continuous(name = "Percent of renter occupied units",
+                     breaks = seq(0, 1, by = 0.25),
+                     labels = paste(seq(0, 100, by = 25), "%", sep = "")) +
+  scale_x_continuous(name = "Median age within tract",
+                     breaks = seq(10, 80, by = 10)) +
+  scale_color_manual(name = "Majority race/ethnicity",
+                     values = wes_palette("Darjeeling2", n = 4),
+                     labels = c("Hispanic",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Black", 
+                                  "No Majority")) +
+  theme_minimal() 
+  theme(legend.key.size = unit(0.1, "cm"))
+```
+## Plot 8: Shapes scatter plot chart
+
+## Percent of individuals that only speak English, income and median age within tract
+
+```{r, message=FALSE, results='hide'}
+
+ggplot (Honolulu_tracts) +
+        geom_point(mapping = aes(y = pct_eng, x = med_age, shape = majority_inc, color=majority_inc )) +
+     scale_y_continuous(name = "Percent of individuals that only speak English",
+                     breaks = seq(0, 1, by = 0.1),
+                     labels = paste(seq(0, 100, by = 10), "%", sep = "")) +
+   scale_x_continuous(name = "Median age within tract",
+                     breaks = seq(10, 80, by = 10)) +
+   scale_shape_discrete(name = "Majority income",
+                     labels = c("NA", "Income Below $25,000", 
+                                "Income Above $25,000")) + 
+   scale_color_manual(name = "Majority income",
+                     values = wes_palette("Moonrise3", n = 3),
+                     labels = c("NA", "Income Below $25,000", "Income Above $25,000")) +
+    theme_minimal() 
+    theme(legend.key.size = unit(0.1, "cm"))
+```
+
+## Plot 9: Fit Line scatter plot Chart 
+
+## Total population and percent of people with a bachelor's degree
+
+```{r, message=FALSE, results='hide'}
+
+ggplot(Honolulu_tracts, aes(y=pct_bach, x=tot_pop)) +
+  geom_point(mapping = aes(color = majority_race_eth)) + 
+  geom_smooth(fill="gray", color="#69b3a2", alpha=0.3, size = 0.5) +
+  scale_y_continuous(name = "Percent with bachelor's degree",
+                     breaks = seq(0, 1, by = 0.1),
+                     labels = paste(seq(0, 100, by = 10), "%", sep = ""))  +
+  scale_x_continuous(name = "Total Population")+
+  scale_color_manual(name = "Majority race/ethnicity",
+                     values = wes_palette("Darjeeling1", n = 4),
+                     labels = c("Hispanic",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Black", 
+                                  "No Majority"))+
+  theme_minimal()
+  theme(legend.key.size = unit(0.1, "cm"))
+```
+
+
+## Plot 10: Fit Line scatter plot Chart within a polar coordinate system
+
+## Percent of individuals that only speak English, percent of renter occupied units and majority race/ethnicity
+
+```{r, message=FALSE, results='hide'}
+ggplot(Honolulu_tracts, 
+       aes(x = pct_rent_occ,
+           y = pct_eng,
+           color= majority_race_eth )) +
+  geom_point(alpha = 1, size = 0.5) +
+  stat_smooth(color = "#69b3a2", linetype = 5, size = 0.5) +
+  scale_x_continuous(name = "Percent of renter occupied units",
+                     breaks = seq(0, 1, by = 0.1),
+                    labels = paste(seq(0, 100, by = 10), "%", sep = ""))+
+   scale_y_continuous(name = "Percent of individuals that only speak English",
+                     breaks = seq(0, 1, by = 0.1),
+                     labels = paste(seq(0, 100, by = 10), "%", sep = "")) +
+  scale_color_manual(name = "Majority race/ethnicity",
+                     values = wes_palette("BottleRocket2", n = 4),
+                       labels = c("Hispanic",
+                                  "Non-Hispanic Asian",
+                                  "Non-Hispanic White",
+                                  "Non-Hispanic Black", 
+                                  "No Majority"))+
+  coord_polar(theta = "x") +
+  theme_minimal() 
+  theme(legend.key.size = unit(0.1, "cm"))
+
+```
