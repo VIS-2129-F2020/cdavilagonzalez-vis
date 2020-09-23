@@ -1,0 +1,234 @@
+---
+title: "Assignment 2"
+author: "Cristina Davila Gonzalez"
+date: "9/20/2020"
+output: html_document
+
+---
+## Libraries
+
+```{r, message=FALSE , results='hide'}
+library(ggplot2)
+library(sf)
+library(tidyverse)
+library(ggspatial)
+library(cartogram)
+library(ggthemes)
+library(wesanderson)
+library(viridis)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(rnaturalearthhires)
+
+```
+
+# World map
+
+```{r, results='hide'}
+world <- ne_countries(scale = 50, returnclass = "sf") 
+world_map <- ggplot(world) +
+  geom_sf(fill = NA, color = "#5498ae") +
+  theme_minimal()
+
+world_map
+
+```
+
+# South America
+```{r, results='hide'}
+sa_countries <- world %>%
+  filter(continent == "South America")
+
+sa_map <- ggplot(sa_countries) +
+  geom_sf(fill = NA, color = "#85b6c3") + 
+  theme_minimal()
+
+sa_map
+```
+
+## South America in 3 map projections
+
+```{r, results='hide'}
+lcc69_sa <- "+proj=lcc +lat_1=-5 +lat_2=-42 +lat_0=-32 +lon_0=-60 +x_0=0 +y_0=0 +ellps=aust_SA +units=m +no_defs"
+laea_sa <- "+proj=laea +lat_0=-10 +lon_0=-70 +x_0=0 +y_0=0 +a=6370997 +b=6370997 +units=m +no_defs"
+br_poly <- "+proj=poly +lat_0=0 +lon_0=-54 +x_0=5000000 +y_0=10000000 +ellps=aust_SA +units=m +no_defs"
+```
+
+```{r, results='hide'}
+ggplot(sa_countries) +
+  geom_sf( fill = NA, color = "#ebcf58") +
+  ggtitle("South America", subtitle = paste0("Map Projection 1: South America 1969 Lambert Conformal Conic")) +
+  coord_sf(crs = lcc69_sa) +
+  theme_minimal() 
+```
+```{r, results='hide'}
+ggplot(sa_countries) +
+  geom_sf(fill = NA, color = "#dd4d3c") +
+  ggtitle("South America", subtitle = paste0("Map Projection 2: Lambert Azimuthal Equal Area (SERENA)")) +
+  coord_sf(crs = laea_sa) +
+  theme_minimal()
+```
+```{r, results='hide'}
+ggplot(sa_countries) +
+  geom_sf( fill = NA, color = "#7895d0") +
+  ggtitle("South America", subtitle = paste0("Map Projection 3: Brazil Polyconic")) +
+  coord_sf(crs = br_poly) +
+  theme_minimal()
+```
+
+## South America map with transformed coordinate system: Brazil Polyconic
+```{r, results='hide'}
+sa_transformed <- sa_countries %>%
+  st_transform(crs = br_poly)
+```
+
+## Representing Data in South America
+
+For this assignment, I wanted to practice with both existing and imported datasets, so I generated graphics from the **rnaturalearth** library and **province and country-level data on COVID-19 from John Hopkins University’s Center for Systems Science and Engineering**, experimenting with both Wes Anderson and viridis palettes, respectively.
+
+### GDP in South America - Chloropleth map
+
+```{r, results='hide'}
+options(scipen = 999)
+pal <- wes_palette("Zissou1", 100, type = "continuous")
+ggplot(data = sa_transformed) +
+  ggtitle("South America") +
+ geom_sf(color= NA, aes(fill = gdp_md_est)) +
+     scale_fill_gradientn(colours = pal,
+                         name = "Estimated Country GDP\n")+
+  theme_map() +
+  theme(legend.background = element_blank())
+```
+
+### GDP in South America - Non-continuous cartogram
+
+```{r, results='hide'}
+pal <- wes_palette("Zissou1", 100, type = "continuous")
+
+sa_cartogram_ncont <- sa_transformed %>%
+  cartogram_ncont("gdp_md_est")
+
+ggplot(sa_cartogram_ncont) +
+  ggtitle("South America") +
+  geom_sf(color = NA, aes (fill= gdp_md_est)) +
+    scale_fill_gradientn(colours = pal,
+                         name = "Estimated Country GDP\n")+
+  theme_map() +
+  theme(legend.background = element_blank())
+```
+
+### GDP in South America - Dorling cartogram
+
+```{r, results='hide'}
+pal <- wes_palette("Zissou1", 100, type = "continuous")
+
+sa_cartogram_dorling <- sa_transformed %>%
+  cartogram_dorling("gdp_md_est")
+
+ggplot(sa_cartogram_dorling) +
+  ggtitle("South America") +
+  geom_sf(color = NA, aes (fill= gdp_md_est)) +
+     scale_fill_gradientn(colours = pal,
+                         name = "Estimated Country GDP\n")+
+  theme_map() +
+  theme(legend.background = element_blank(),legend.position = "left"  )
+```
+
+## Mapping COVID-19 in South America - Importing and transforming data 
+
+I found out how to upload data directly from **John Hopkins University COVID-19 Github repository** without the need to have the file in my computer, so I decided to give it a try, using data from most recent date I had when I began this exercise. 
+
+I encountered myself with province-level data coexisting with country-level data, and Ignacio Lafuente kindly shared with me a way to not only group it so my graphs show the **total amount of cases per country**, but also to represent cases on a scale of **numbers per million inhabitants**, for a better interpretation:
+
+```{r, results='hide'}
+covid_world <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/09-19-2020.csv")
+
+covid_world_2 <- select(covid_world, Country_Region, Confirmed)
+
+covid_world_3 <- aggregate(covid_world_2[-1], by = list(covid_world$Country_Region), FUN = sum)
+
+covid_sa <- sa_transformed %>%
+  left_join(covid_world_3, by = c("name" = "Group.1")) %>%
+  select(name, pop_est, Confirmed)
+
+covid_sa$pop_est2 <-as.numeric(covid_sa$pop_est)
+
+covid_sa$confirmed_per_m <- covid_sa$Confirmed / covid_sa$pop_est2 *1000000  
+
+```
+
+### Confirmed Cases in South America - Chloropleth map
+
+```{r, results='hide'}
+ggplot(covid_sa, aes(fill = confirmed_per_m)) +
+   ggtitle("South America", subtitle = paste0("September 19th, 2020")) +
+  geom_sf(color = NA) +
+  scale_fill_viridis_c(
+    name = "Number of reported\nCOVID-19 confirmed cases\nper million inhabitants",
+    breaks = seq(0, 25000, by = 5000),
+    labels = formatC(seq(0, 25000, by = 5000), 
+                     format = "f", digits = 0)) +
+  theme_map() +
+  theme(legend.background = element_blank(), legend.position = "right")
+```
+
+### Confirmed Cases in South America - Dorling Cartogram
+
+```{r, results='hide'}
+covid_cartogram_dorling <- covid_sa %>%
+  cartogram_dorling("pop_est2")
+
+ggplot(covid_cartogram_dorling, aes(fill = confirmed_per_m)) +
+  ggtitle("South America", subtitle = paste0("September 19th, 2020")) +
+  geom_sf(color = NA) +
+  scale_fill_viridis_c(
+    name = "Number of reported\nCOVID-19 confirmed cases\nper million inhabitants",
+    breaks = seq(0, 25000, by = 5000),
+    labels = formatC(seq(0, 25000, by = 5000), 
+                     format = "f", digits = 0)) +
+  theme_map() +
+  theme(legend.background = element_blank(), legend.position = "right")
+
+```
+
+### Confirmed Cases in South America - Non-continuous Cartogram
+
+```{r, results='hide'}
+covid_cartogram_ncont <- covid_sa %>%
+  cartogram_ncont("pop_est2")
+
+ggplot(covid_cartogram_ncont, aes(fill = confirmed_per_m)) +
+  geom_sf(color = NA) +
+   ggtitle("South America", subtitle = paste0("September 19th, 2020")) +
+  scale_fill_viridis_c(
+    name = "Number of reported\nCOVID-19 confirmed cases\nper million inhabitants",
+    breaks = seq(0, 25000, by = 5000),
+    labels = formatC(seq(0, 25000, by = 5000), 
+                     format = "f", digits = 0)) +
+ 
+  theme_map() +
+  theme(legend.background = element_blank(), legend.position = "right")
+
+```
+
+### Confirmed Cases in South America - Proportional Symbol Map
+
+```{r, results='hide'}
+covid_centeroids <- covid_sa %>%
+  st_centroid()
+
+ggplot(sa_transformed) +
+  geom_sf(fill = NA, color = "#67c562") +
+   ggtitle("South America", subtitle = paste0("September 19th, 2020")) +
+  geom_sf(data = covid_centeroids, 
+          aes(size = confirmed_per_m),
+          alpha = 0.5, color = "#433d80") +
+  scale_size_continuous( name = "Number of reported\nCOVID-19 confirmed cases\nper million inhabitants",
+    breaks = seq(0, 25000, by = 5000),
+    labels = formatC(seq(0, 25000, by = 5000), 
+                     format = "f", digits = 0),
+    range = c(0, 20)) +
+  theme_void()
+  theme(legend.background = element_blank(), legend.position = "right")
+
+```
