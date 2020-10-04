@@ -1,0 +1,281 @@
+---
+title: "Assignment 3"
+author: "Cristina Davila Gonzalez"
+date: "9/26/2020"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+library(sf)
+library(tidyverse)
+library(ggthemes)
+library(ggspatial)
+library(units)
+library(nngeo)
+library(viridis)
+```
+
+## Downloading data: City of Boston
+
+With the purpose of seizing this exercise across courses, I'm also downloading data from **Analyze Boston's open data hub**, as we're currently developing analysis on the city neighborhoods at the Urban Planning Studio. I'll be getting data on the themes of Arts & Culture and Open Spaces & Ecology.
+
+```{r, message=FALSE}
+nhoods <- st_read("http://bostonopendata-boston.opendata.arcgis.com/datasets/3525b0ee6e6b427f9aab5d0a1d0a1a28_0.kml?outSR=%7B%22latestWkid%22%3A2249%2C%22wkid%22%3A102686%7D", quiet=TRUE)
+
+hubwaystations <- st_read("http://bostonopendata-boston.opendata.arcgis.com/datasets/ee7474e2a0aa45cbbdfe0b747a5eb032_0.kml?outSR=%7B%22latestWkid%22%3A3857%2C%22wkid%22%3A102100%7D", quiet=TRUE)
+
+openspaces <- st_read("http://bostonopendata-boston.opendata.arcgis.com/datasets/2868d370c55d4d458d4ae2224ef8cddd_7.kml", quiet=TRUE)
+
+communityc <- st_read("http://bostonopendata-boston.opendata.arcgis.com/datasets/acedd06b39854088b0f2fefccffebf84_0.kml?outSR=%7B%22latestWkid%22%3A3857%2C%22wkid%22%3A102100%7D", quiet=TRUE)
+
+water <- st_read("http://bostonopendata-boston.opendata.arcgis.com/datasets/2b3c0fa13b1c468eb702a3645fcc6bcb_5.kml", quiet=TRUE)
+
+```
+
+Since I'm going to incorporate areas and distances at least in one map, I'll transform my data to the **NAD83 / Massachusetts Mainland** coordinate system.
+
+```{r, message=FALSE}
+MA_NAD83_plane <- "+proj=lcc +lat_1=42.68333333333333 +lat_2=41.71666666666667 +lat_0=41 +lon_0=-71.5 +x_0=200000.0001016002 +y_0=750000 +ellps=GRS80 +datum=NAD83 +to_meter=0.3048006096012192 +no_defs"
+
+nhoods <- nhoods %>%
+  st_transform(MA_NAD83_plane)
+
+hubwaystations <- hubwaystations %>%
+  st_transform(MA_NAD83_plane)
+
+openspaces <- openspaces %>%
+  st_transform(MA_NAD83_plane)
+
+communityc <- communityc %>%
+  st_transform(MA_NAD83_plane)
+
+water <- water %>%
+  st_transform(MA_NAD83_plane)
+
+```
+
+### All layers in a map
+
+```{r, message=FALSE}
+ggplot(water) +
+  geom_sf(fill = "lightblue", color = NA) + 
+  geom_sf(data = nhoods, fill = NA, color= "orange1", size= 0.1) +
+  geom_sf(data = hubwaystations, size= 1, color= "#ffed54") + 
+  geom_sf(data = communityc, size= 1, color= "#da677b") +
+  geom_sf(data = openspaces, fill = "#b4d79e", color= NA, size= 1) +
+  annotation_scale()+
+  ggtitle("Boston, Massachusetts", subtitle = paste0("hubway stations, open spaces\nand community centers"))+
+  theme_map() +
+     annotation_north_arrow(location = "tr",   height = unit(0.7, "cm"),
+  width = unit(0.7, "cm") )
+```
+
+### Neighborhoods by number of open spaces
+
+I decided to apply the same neighborhood count analysis as the one in the tutorial, but open spaces in this particular case.
+```{r, message=FALSE}
+test <- st_covers(nhoods, openspaces)
+lengths(test)
+```
+
+```{r, message=FALSE}
+nhoods <- nhoods %>%
+  mutate(num_openspaces = lengths(st_covers(nhoods, openspaces)))
+
+ggplot(nhoods) +
+  geom_sf(aes(fill=num_openspaces, color= NA)) +
+  scale_fill_gradientn(name = "Boston neighborhoods\nby number of open spaces\n", colors = c("#da677b", "#ffed54", "#b4d79e"))+
+  ggtitle("Boston, Massachusetts", subtitle = paste0("neighborhoods and open spaces"))+
+  scale_color_manual(values = NA)+
+    theme_map()+
+   theme(legend.position = "right")
+
+
+```
+
+## Hubway Stations
+
+### 500-meter buffer around each hubway station in the City of Boston
+
+After going over the exercise with the support of Ana Zhibaj, I realized I needed to increase my buffer dimension (initially 200-300 meters like the one in the tutorial) to include an observable amount of community centers, as the stations are mostly concentrated in the north part of the city, whereas most of the community centers are located south (this is also visible in the first map, where all variables are displayed together, but had to go over the map and talk it out with a fellow classmate to reach this conclusion).
+```{r}
+hubways_buffer <- st_buffer(hubwaystations, dist = 500) %>%
+  st_union()
+ggplot(hubways_buffer) + 
+  geom_sf(color = "#ffed54") +
+  theme_map()
+```
+```{r}
+cc_hubs <- communityc[hubways_buffer,]
+  
+ggplot(hubways_buffer) +
+  geom_sf(color = "#ffed54") +
+  geom_sf(data = cc_hubs, 
+          color = "#da677b", 
+          size = 2.5) +
+  theme_map()
+```
+```{r, message= FALSE}
+communityc <- communityc %>%
+  st_join(cc_hubs) %>%
+  mutate(by_hubwaystations = !is.na(Name.y))
+```
+
+Now we can calculate how many community centers are within 500 meters of a hubway station:
+
+```{r, message= FALSE}
+n_hubs_cc <- sum(communityc$by_hubwaystations)
+
+n_hubs_cc
+```
+
+And what percent of all community centers does this represent?
+
+```{r, message= FALSE}
+n_cc <- length(communityc$by_hubwaystations)
+
+pct_hubs_cc <- n_hubs_cc / n_cc
+
+pct_hubs_cc
+```
+
+About 17% of all community centers in Boston are within 500 meters of a hubway station. Let's represent this in a map:
+
+```{r, message= FALSE}
+left_side  <- st_bbox(communityc)$xmin
+top_side <- st_bbox(communityc)$ymax
+
+ggplot(water) +
+  geom_sf(fill = "lightblue", color = NA) +
+  geom_sf(data = nhoods, fill = NA, color= "orange1", size= 0.1) +
+  geom_sf(data = communityc, size = 1.5,
+          aes(color = by_hubwaystations)) +
+  scale_color_manual(values = c("#b4d79e", "#da677b"),
+          name = "Boston community centers\nby distance to a hubway station", 
+          labels = c("No hubway station within 500 m",
+                     "Hubway station within 500 m")) +
+  annotation_scale(location = "bl") +
+  annotate(geom = "text",x = left_side, 
+           y = top_side +5000, 
+           label = paste("Of the ", 
+                         prettyNum(n_cc, big.mark = ","),
+                         " community centers in Boston,\n", 
+                         prettyNum(n_hubs_cc, big.mark = ","),
+                         " (", 
+                         prettyNum(100*pct_hubs_cc, digits = 0),
+                         "%) are within 500 meters of a hubway station.",
+                         sep = ""),
+           hjust = 0, vjust = 0, size = 3) +
+ theme_map() +
+  theme(legend.position = c(0.7,0))+
+     annotation_north_arrow(location = "tr",   height = unit(0.7, "cm"),
+  width = unit(0.7, "cm") )
+```
+
+
+
+
+### Number of Hubway stations in open spaces
+```{r, message=FALSE}
+openspaces <- openspaces %>%
+  mutate(num_hs = lengths(st_covers(openspaces, hubwaystations))) 
+  
+ggplot(openspaces) +
+  geom_sf(data = nhoods, fill = NA, color= "grey", size= 0.1) +
+  geom_sf(color =NA,
+          aes(fill = num_hs)) +
+  scale_fill_viridis_c(name = "Number of hubway stations\nin open spaces\n",
+                              breaks = breaks <- seq(0, 5, by = 1),
+                       labels = paste(prettyNum(breaks, big.mark = ","),
+                                      "stations")) +
+  theme_map() +
+  theme(legend.position = c(0.7,0))
+
+```
+
+### Hubway stations density per Neighborhood
+```{r, message= FALSE}
+nhoods <- nhoods %>%
+  mutate(num_hubwaystations = lengths(st_covers(nhoods, hubwaystations))) %>%
+  mutate(area = set_units(st_area(nhoods), km^2)) %>%
+   mutate(hub_dens = as.numeric(num_hubwaystations / area))
+ 
+ggplot(nhoods) +
+  geom_sf(color = NA, 
+          aes(fill = hub_dens)) +
+    scale_fill_viridis_c(name = "Hubway station density\nby neighborhood\n",
+                       breaks = breaks <- seq(0, 8, by = 2),
+                       labels = paste(prettyNum(breaks, big.mark = ","),
+                                      "Station per square km")) +
+  theme_map() +
+  theme(legend.position = "right")
+```
+
+## Community Centers
+
+### Neighborhoods by their number of community centers
+```{r, message=FALSE}
+test <- st_covers(nhoods, communityc)
+lengths(test)
+```
+
+```{r, message=FALSE}
+nhoods <- nhoods %>%
+  mutate(num_communityc = lengths(st_covers(nhoods, communityc)))
+
+ggplot(nhoods) +
+  geom_sf(color= NA, aes(fill=num_communityc )) +
+  theme_map() +
+  scale_fill_viridis_c(option = "plasma",
+                       name = "Boston neighborhoods\nby number of community centers\n",
+                       breaks = breaks <- seq(0, 6, by = 1),
+                       labels = paste(prettyNum(breaks)))  +
+  ggtitle("Boston, Massachusetts", subtitle = paste0("neighborhoods and community centers"))+
+  theme(legend.position = c(0.7, 0))
+
+```
+
+### Distance between open spaces and community centers
+
+After watching Summer Liu's exercise on distances in class, I wanted to give it a try with open spaces and community centers, and also calculate the average distance between them.
+```{r, message=FALSE, results= 'hide'}
+
+communityc <- communityc %>%
+  mutate(openspaces_dist = st_nn(communityc, openspaces, 
+                           returnDist = TRUE)$dist) %>%
+  mutate(openspaces_dist = as.numeric(openspaces_dist))
+
+```
+```{r, message= FALSE}
+avg_cc_dist <- mean(communityc$openspaces_dist)
+
+avg_cc_dist
+```
+
+
+
+```{r, message= FALSE}
+right_side <- st_bbox(communityc)$xmax
+left_side  <- st_bbox(communityc)$xmin
+top_side <- st_bbox(communityc)$ymax
+bottom_side <- st_bbox(communityc)$ymin
+
+ggplot(openspaces) +
+  geom_sf(fill = "#b4d79e", color = NA) +
+  geom_sf(data = nhoods, fill = NA, color= "lightgrey", size=0.3)+
+  geom_sf(data= water, color = NA, fill = "lightblue")+
+  geom_sf(data = communityc, size = 1, aes(color = openspaces_dist)) +
+  coord_sf(xlim = c(left_side, right_side), 
+           ylim = c(bottom_side, top_side), expand = TRUE) +
+  scale_color_viridis_c(option = "plasma", name = "Distance between\nopen spaces and\ncommunity centers\n") +
+  annotation_scale(location = "br") +
+  annotate(geom = "text", x = left_side + 300, 
+           y = top_side - 3000,
+           label = paste("The average distance between\ncommunity centers and\nopen spaces is 70 meters."),
+           hjust = 0, vjust = 0, size = 3) +
+  theme_map() +
+  theme(legend.position = "right") 
+
+```
+
+
